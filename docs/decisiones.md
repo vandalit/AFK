@@ -113,3 +113,23 @@ Se completó el andamiaje del proyecto según la sección 5 del documento maestr
 1. Con Electron v41 (versión instalada de Node v20/v22 ABI), `robotjs` presenta fallos de compilación con las herramientas nativas modernas debido a la falta de mantenimiento de sus bindings C++ antiguos.
 2. La alternativa más sólida, limpia y sin fricción de compilación C++ nativa para inyectar `SendInput` en Windows es **`koffi`** (FFI moderno de alto rendimiento) o un script ligero de PowerShell/Win32 `user32.dll:SetCursorPos`.
 3. Para la Fase 0 se implementó `NullCursorDriver` para garantizar la seguridad del sistema y el desacoplamiento estricto. La elección de la librería final para la Fase 1 será acordada con el usuario.
+
+---
+
+## ADR-08: Estrategia Multiplataforma Progresiva y Live Web Sandbox
+
+### Estado: APROBADO
+### Contexto:
+El público objetivo del producto incluye usuarios, diseñadores y estudiantes habituados a macOS (especialmente en entornos de investigación de UX/XR), mientras que el desarrollador opera en Windows con WSL. Además, existe la necesidad de validar y compartir el comportamiento gestual sin requerir que los usuarios instalen dependencias nativas o permisos elevados en sus computadoras.
+
+### Decisión:
+1. **Priorización Escalonada de Plataformas**:
+   - **Fase POC (Inmediata)**: Windows nativo (`user32.dll` vía `koffi`).
+   - **Fase Post-POC (Mediano Plazo)**: macOS nativo (`CoreGraphics` / `CGEventPost` vía `koffi`). Como el desarrollador no dispone de hardware Apple físico, la compilación y pruebas de empaquetado (`.dmg`) se automatizarán en GitHub Actions (`macos-latest`).
+   - **Largo Plazo**: Linux (`XTest` / Wayland).
+2. **Live Web Sandbox / Playground**:
+   - Construir una variante SPA en navegador que reutilice los módulos puros de visión (`src/vision/`) y gestos (`src/gestures/`).
+   - El sandbox emula la inyección de cursor sobre un canvas con componentes interactivos (botones, sliders, tarjetas de arrastre), permitiendo pruebas instantáneas en cualquier dispositivo (incluidos Mac) simplemente abriendo una URL.
+3. **Factoría de Drivers (`createCursorDriver`)**:
+   - Desacoplar la inicialización mediante detección de `process.platform` (`win32`, `darwin`, `linux`, `browser`), garantizando que el código no falle ni genere errores de compilación cruzada.
+

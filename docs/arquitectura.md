@@ -119,11 +119,30 @@ export interface CursorDriver {
   click(button?: 'left' | 'right'): void;
   destroy(): void;
 }
+
+/**
+ * Factoría de Drivers Multiplataforma:
+ * - 'win32': WindowsCursorDriver (user32.dll / SendInput vía koffi)
+ * - 'darwin': MacCursorDriver (CoreGraphics / CGEventPost vía koffi)
+ * - 'linux': LinuxCursorDriver (libX11 / XTest)
+ * - 'browser': WebMockCursorDriver (emula eventos en DOM para el Playground)
+ */
+export function createCursorDriver(): CursorDriver;
 ```
 
 ---
 
-## 4. Pipeline Matemático y Algorítmico
+## 4. Modo Live Web Playground (Sandbox en Navegador)
+
+Para permitir que usuarios, alumnos e investigadores de UX prueben la tecnología en vivo desde cualquier sistema operativo (macOS, Linux o Windows) sin necesidad de empaquetado o instalación nativa:
+
+1. **Reutilización del 100% del Núcleo**: El motor de captura (`vision/camera.ts`), la inferencia (`vision/hand-tracker.ts`), el filtro One Euro (`vision/one-euro.ts`) y la FSM (`gestures/fsm.ts`) corren directamente en el navegador.
+2. **Cursor Virtual en DOM**: En lugar de inyectar llamadas al sistema operativo, el `WebMockCursorDriver` emite eventos sintéticos (`MouseEvent`, `PointerEvent`) sobre un canvas interactivo con componentes de prueba (botones, tarjetas arrastrables, controles deslizantes).
+3. **Despliegue Cero-Fricción**: Compilable como aplicación web estática (SPA con Vite) desplegable en GitHub Pages o Vercel.
+
+---
+
+## 5. Pipeline Matemático y Algorítmico
 
 ### 4.1. Filtro One Euro (`one-euro.ts`)
 Para erradicar el temblor (jitter) sin introducir retraso perceptible, se implementa el filtro adaptativo One Euro:

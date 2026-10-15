@@ -12,8 +12,8 @@ Este plan de trabajo desglosa el desarrollo de **AFK** en 6 fases incrementales 
 | **1** | **Cursor y Navegación** | One Euro + Zona Activa + Driver de Cursor OS + Tray & Atajo | El cursor real del SO se mueve con suavidad alcanzando los 4 bordes. El atajo global apaga el control al instante. |
 | **2** | **Capa Vectorial de Afordancia** | Renderizado de Mano SVG + Niveles L0 a L3 manuales | La punta del dedo índice vectorial coincide exactamente con el hotspot del puntero del SO. |
 | **3** | **Click, Buffer y Clutch** | Detección de Push + Buffer circular 150ms + Gesto Clutch | Click acertado sobre botones de ~40 px en más del 85% de los intentos sin arrastres accidentales. |
-| **4** | **Gestos Avanzados y Calibración**| Pinch/Drag + Grab + Panel de Ajustes con Sliders en vivo | Capacidad de arrastrar ventanas de Windows mediante pinch y calibrar umbrales algorítmicos en caliente. |
-| **5** | **Pulido y Resiliencia** | Soporte Multimonitor/DPI + Fade por Familiaridad + Telemetría | Adaptación a múltiples pantallas y transición visual adaptativa según el dominio del usuario. |
+| **4** | **Gestos Avanzados & Web Sandbox**| Pinch/Drag + Grab + Panel de Ajustes + **Playground Web** | Arrastrar ventanas en desktop y manipulación fluida de componentes interactivos en navegador web. |
+| **5** | **Pulido, Multi-pantalla & macOS** | Adaptación macOS (`CoreGraphics`), Multi-monitor/DPI y Fade | Compatibilidad multiplataforma demostrada (Windows + Mac CI/CD) y transición adaptativa L0-L3. |
 
 ---
 

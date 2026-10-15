@@ -53,25 +53,28 @@ El resultado es un sistema que no requiere hardware propietario ni cascos de rea
 
 ---
 
-## 4. Alcance del Proyecto
+## 4. Alcance del Proyecto y Estrategia Multiplataforma
 
-### 4.1. Dentro del Alcance (POC)
-- **Operación monomanual** (detección preferente de mano derecha o izquierda según `handedness`).
-- **Resolución de pantalla única** (Windows 10/11 x64).
-- **Gesto de apuntado (Point)**: El dedo índice extendido (resto recogido) proyecta el cursor a la pantalla con mapeo espacial.
-- **Gesto de click (Push)**: Avance rápido de la mano hacia la cámara con índice extendido, compensado mediante buffer circular de coordenadas previas (~150-200 ms).
-- **Gesto de embrague / pausa (Clutch)**: Palma abierta extendida congela inmediatamente la inyección de cursor para reposo o reposicionamiento sin alterar la posición en pantalla.
-- **Capa Vectorial de Afordancia (Overlay)**: Ventana transparente frameless, always-on-top, click-through, que dibuja la mano SVG en 4 niveles de visibilidad (`L0` a `L3`) ajustables manualmente.
-- **Integración de Sistema**: Icono en bandeja de sistema (System Tray) con menú contextual y atajo global de teclado (`globalShortcut`) para activación/desactivación instantánea.
-- **Panel de Calibración / Debug**: Interfaz con sliders para ajustar en vivo todos los umbrales algorítmicos.
+### 4.1. Estrategia de Plataformas por Etapas
+1. **Etapa 1 (Actual - POC)**: **Windows 10/11 Nativo**. Enfoque prioritario para validar el pipeline de inyección, la capa de afordancia transparente y la sensación táctil-gestual.
+2. **Etapa 2 (Mediano Plazo)**: **macOS (Apple Silicon / Intel)**. Dirigido al ecosistema de diseñadores, alumnos y experimentadores de UX/XR. Inyección mediante `CoreGraphics` (`CGEventPost`) con validación automatizada en GitHub Actions.
+3. **Etapa 3 (Largo Plazo)**: **Linux Desktop**. Soporte para X11 (mediante `XTest`) y evaluación de portales Wayland.
+4. **Capa Transversal (Web Playground / Sandbox)**: Modo web interactivo que corre la misma visión y FSM en cualquier navegador (Chrome, Safari, Edge) para testear y calibrar sin requerir instalación nativa.
 
-### 4.2. Fuera del Alcance (Post-POC / Futuro)
-- Soporte para configuraciones multimonitor con factores de escalado DPI mixtos.
-- Soporte para Linux y macOS (el POC se enfoca exclusivamente en Windows nativo por drivers de mouse e IPC).
-- Interacción con juegos en pantalla completa exclusiva que tomen control directo de DirectX/Vulkan y tapen ventanas GDI/Electron.
-- Ventanas con privilegios elevados de Administrador (UAC), salvo que AFK se ejecute explícitamente con elevación de permisos.
-- Control bimanual simultáneo (ej. una mano apunta y la otra hace zoom/scroll).
-- Algoritmo automatizado de aprendizaje para desvanecimiento de afordancia (en el POC se gobierna manualmente desde el panel).
+### 4.2. Dentro del Alcance (POC & Web Sandbox)
+- **Operación monomanual** (preferencia diestra/zurda según `handedness`).
+- **Windows Desktop**: Integración nativa con `user32.dll` (`SendInput` / `SetCursorPos`), Overlay transparente click-through, System Tray y Hotkey global.
+- **Web Sandbox / Playground**: Entorno web interactivo ejecutable en navegador con elementos de prueba (botones interactivos, sliders, tarjetas arrastrables) para validar algoritmos con usuarios de Mac/Linux sin barreras de instalación.
+- **Gesto de apuntado (Point)**: Índice extendido proyecta el cursor a la pantalla o canvas interactivo.
+- **Gesto de click (Push)**: Tasa de cambio de escala + buffer circular compensador de desplazamiento.
+- **Gesto de reposo (Clutch)**: Palma abierta sostenida congela el control para descanso muscular.
+- **Capa Vectorial de Afordancia**: Niveles `L0` a `L3` con sincronización milimétrica al hotspot.
+- **Panel de Calibración / Debug**: Sliders en vivo para ajustar umbrales en caliente.
+
+### 4.3. Fuera del Alcance (Fase Inicial)
+- Soporte para configuraciones multimonitor con DPI mixto (pospuesto a Fase 5).
+- Inyección directa a procesos con privilegios elevados (UAC) sin elevación previa.
+- Juegos en pantalla completa exclusiva con bypass de DWM.
 
 ---
 
