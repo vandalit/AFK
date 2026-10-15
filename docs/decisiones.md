@@ -100,3 +100,16 @@ Calcular `handScale` como la distancia euclidiana 2D/3D entre la muñeca (landma
 | **Fatiga Muscular del Brazo (Gorilla Arm)** | Alto | Mantener el brazo extendido fatiga al usuario rápidamente. **Mitigación**: <br>1. **Zona Activa Reducida (~60%)**: Rango de movimiento corto sin estirar el brazo.<br>2. **Modo Clutch**: Permite soltar el control y descansar la mano con solo abrir la palma. |
 | **Deriva del Cursor al Disparar Click** | Alto | El impulso físico de empujar desplaza el dedo. **Mitigación**: Buffer circular pre-click de 150-200 ms que fija la coordenada previa al empuje. |
 | **Privacidad de la Cámara** | Crítico | Temor del usuario a ser grabado. **Mitigación**: Inferencia 100% local, cero conectividad a internet, e indicador visual claro en el System Tray cuando la cámara está activa. |
+
+---
+
+## ADR-07: Andamiaje de Fase 0 (Spike) y Evaluación de Inyección Nativa
+
+### Estado: IMPLEMENTADO (Fase 0)
+### Contexto:
+Se completó el andamiaje del proyecto según la sección 5 del documento maestro, implementando la ventana de visión oculta con MediaPipe y One Euro, la ventana overlay transparente click-through, el System Tray, el atajo global y la suite de pruebas unitarias.
+
+### Hallazgos de Librería de Mouse Nativa:
+1. Con Electron v41 (versión instalada de Node v20/v22 ABI), `robotjs` presenta fallos de compilación con las herramientas nativas modernas debido a la falta de mantenimiento de sus bindings C++ antiguos.
+2. La alternativa más sólida, limpia y sin fricción de compilación C++ nativa para inyectar `SendInput` en Windows es **`koffi`** (FFI moderno de alto rendimiento) o un script ligero de PowerShell/Win32 `user32.dll:SetCursorPos`.
+3. Para la Fase 0 se implementó `NullCursorDriver` para garantizar la seguridad del sistema y el desacoplamiento estricto. La elección de la librería final para la Fase 1 será acordada con el usuario.

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>AFK - Vectorial Affordance Layer</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+    html, body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: transparent !important;
+      pointer-events: none; /* Asegura click-through a nivel CSS */
+    }
+    svg#affordance-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      pointer-events: none;
+    }
+    .index-pointer {
+      fill: #00ffcc;
+      stroke: rgba(255, 255, 255, 0.9);
+      stroke-width: 2.5px;
+      filter: drop-shadow(0 0 8px rgba(0, 255, 204, 0.8));
+      transition: r 0.08s ease-out;
+    }
+    .index-pointer.push-armed {
+      fill: #ff3366;
+      filter: drop-shadow(0 0 14px rgba(255, 51, 102, 0.9));
+    }
+    .bone-line {
+      stroke: rgba(0, 255, 204, 0.35);
+      stroke-width: 2px;
+      stroke-linecap: round;
+    }
+    .joint-node {
+      fill: rgba(255, 255, 255, 0.7);
+    }
+  </style>
+</head>
+<body>
+  <svg id="affordance-canvas">
+    <g id="skeleton-group"></g>
+    <!-- Círculo que sigue la punta del índice (Fase 0 - Spike) -->
+    <circle id="index-dot" class="index-pointer" cx="-100" cy="-100" r="10" />
+  </svg>
+  <script type="module" src="./hand-renderer.ts"></script>
+</body>
+</html>

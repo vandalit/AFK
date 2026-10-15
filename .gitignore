@@ -1,0 +1,48 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Node & Dependencias
+node_modules/
+.pnp
+.pnp.js
+
+# Build Outputs (Electron & Vite)
+out/
+dist/
+build/
+.electron-vite/
+
+# Archivos temporales y metadatos del SO
+.DS_Store
+Thumbs.db
+*.Zone.Identifier
+
+# Entorno y variables secretas
+.env
+.env.local
+.env.*.local
+
+# Cobertura y testing
+coverage/
+*.lcov
+.nyc_output/
+
+# IDE & Editores
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.sublime-project
+*.sublime-workspace
+.gemini/
+
+# Scratch & Temporales
+*.tmp
+*.temp
+scratch/

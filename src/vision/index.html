@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>AFK - Vision Worker (Hidden)</title>
+  <style>
+    body {
+      margin: 0;
+      background: #111;
+      color: #eee;
+      font-family: sans-serif;
+      overflow: hidden;
+    }
+    #status {
+      padding: 10px;
+      font-size: 13px;
+    }
+    video {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="status">Iniciando MediaPipe Vision Worker...</div>
+  <video id="webcam" playsinline autoplay muted></video>
+  <script type="module" src="./hand-tracker.ts"></script>
+</body>
+</html>
