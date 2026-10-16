@@ -76,6 +76,9 @@
         <section>
           <div class="section-title">
             <span>02. Manipulación Espacial — Pinch & Drag (Pellizcar con Pulgar + Índice)</span>
+            <button id="btn-reset-cards" style="background: transparent; border: 1px solid var(--border-subtle); color: var(--text-muted); padding: 2px 8px; border-radius: 4px; font-size: 11px; cursor: pointer;">
+              Reset Posición
+            </button>
           </div>
           <div class="drag-playground-container" id="drag-stage">
             <div class="draggable-window" id="window-card-1">
@@ -85,10 +88,10 @@
                   <div class="dot yellow"></div>
                   <div class="dot green"></div>
                 </div>
-                <span style="font-size: 11px; font-weight: 600; color: #fff;">Ventana de Telemetría</span>
+                <span style="font-size: 11px; font-weight: 600; color: #fff;">Ventana 1 — Telemetría</span>
               </div>
               <div class="window-body">
-                <p>Haz <strong>PINCH</strong> (junta pulgar e índice) para agarrar esta tarjeta y moverla libremente.</p>
+                <p>Haz <strong>PINCH</strong> (pulgar + índice) o arrastra con el mouse para moverla libremente.</p>
               </div>
             </div>
 
@@ -99,10 +102,10 @@
                   <div class="dot yellow"></div>
                   <div class="dot green"></div>
                 </div>
-                <span style="font-size: 11px; font-weight: 600; color: #fff;">Widget de Control</span>
+                <span style="font-size: 11px; font-weight: 600; color: #fff;">Ventana 2 — Widget</span>
               </div>
               <div class="window-body">
-                <p>Separa los dedos para soltar (histéresis de salida automática).</p>
+                <p>Separa los dedos o suelta el mouse para soltar en la posición deseada.</p>
               </div>
             </div>
           </div>
@@ -230,10 +233,15 @@
           </div>
         </div>
 
-        <!-- Stream Webcam en Miniatura (PiP) -->
+        <!-- Stream Webcam en Miniatura (PiP) con Plano al Pecho -->
         <div class="pip-webcam-container">
-          <div class="pip-tag">WEBCAM LIVE</div>
+          <div class="pip-tag">WEBCAM + PLANO MENTÓN</div>
           <video id="webcam-stream" autoplay playsinline muted></video>
+          <canvas id="pip-overlay"></canvas>
+        </div>
+        <div style="font-size: 10px; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center; margin-top: -4px;">
+          <span>Tracking Facial:</span>
+          <strong id="plane-status-badge" style="color: var(--neon-cyan)">CALIBRANDO...</strong>
         </div>
       </aside>
     </div>

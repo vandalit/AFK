@@ -1,7 +1,7 @@
-import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
+import { FilesetResolver, HandLandmarker, FaceDetector } from '@mediapipe/tasks-vision';
 import { HandFilterSet } from '../vision/one-euro';
 import { computeHandScale, computePinchDistance } from '../gestures/features';
-import { mapCameraToScreen } from '../gestures/calibration';
+import { ChestPlaneManager } from '../gestures/chest-plane';
 import { GestureFSM } from '../gestures/fsm';
 import { DEFAULT_CONFIG } from '../shared/config';
 import type { AppConfig } from '../shared/config';
@@ -12,8 +12,10 @@ import type { AffordanceLevel, HandFrame, Vec3 } from '../shared/events';
 const config: AppConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
 const filterSet = new HandFilterSet(config.oneEuro.minCutoff, config.oneEuro.beta);
 const fsm = new GestureFSM(config);
+const chestPlaneManager = new ChestPlaneManager(0.12);
 
-let landmarker: HandLandmarker | null = null;
+let handLandmarker: HandLandmarker | null = null;
+let faceDetector: FaceDetector | null = null;
 let isCameraActive = false;
 let currentAffordanceLevel: AffordanceLevel = 'L3';
 let isCursorFrozen = false;
@@ -21,11 +23,14 @@ let isCursorFrozen = false;
 // ─── ELEMENTOS DOM ───────────────────────────────────────────────────────────
 
 const videoEl = document.getElementById('webcam-stream') as HTMLVideoElement;
+const pipOverlay = document.getElementById('pip-overlay') as HTMLCanvasElement;
+const pipCtx = pipOverlay.getContext('2d')!;
 const btnToggleCamera = document.getElementById('btn-toggle-camera') as HTMLButtonElement;
 const camText = document.getElementById('cam-text') as HTMLSpanElement;
 const fpsCounter = document.getElementById('fps-counter') as HTMLElement;
 const latencyCounter = document.getElementById('latency-counter') as HTMLElement;
 const fsmBadge = document.getElementById('fsm-badge') as HTMLElement;
+const planeStatusBadge = document.getElementById('plane-status-badge') as HTMLElement;
 
 // Telemetría
 const barScaleRate = document.getElementById('bar-scaleRate') as HTMLElement;
@@ -42,7 +47,8 @@ const pinchConnector = document.getElementById('pinch-connector') as unknown as 
 // Canvas de dibujo
 const drawCanvas = document.getElementById('draw-canvas') as HTMLCanvasElement;
 const drawCtx = drawCanvas.getContext('2d')!;
-let isDrawing = false;
+let isHandDrawing = false;
+let isMouseDrawing = false;
 let lastDrawX = 0;
 let lastDrawY = 0;
 
@@ -52,6 +58,11 @@ const windowCard2 = document.getElementById('window-card-2') as HTMLElement;
 let draggedElement: HTMLElement | null = null;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
+
+// Mouse físico drag state
+let mouseDraggedElement: HTMLElement | null = null;
+let mouseDragOffsetX = 0;
+let mouseDragOffsetY = 0;
 
 // Estadísticas de Target Practice
 let scoreHits = 0;
@@ -70,7 +81,7 @@ function playClickSound(): void {
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
+    osc.frequency.setValueAtTime(880, audioCtx.currentTime);
     osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.05);
     gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
@@ -98,21 +109,134 @@ function playPinchSound(): void {
   } catch {}
 }
 
-// ─── INICIALIZACIÓN DE MEDIAPIPE ─────────────────────────────────────────────
+// ─── INTERACTIVIDAD CON MOUSE FÍSICO ─────────────────────────────────────────
 
-async function initMediaPipe(): Promise<void> {
+function onTargetHit(btn: HTMLElement): void {
+  scoreHits++;
+  scoreTotal++;
+  playClickSound();
+  btn.classList.add('hit');
+  setTimeout(() => btn.classList.remove('hit'), 350);
+  updateScoreboard();
+}
+
+// Botones de Target Practice
+document.querySelectorAll('.target-btn').forEach((btn) => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    onTargetHit(btn as HTMLElement);
+  });
+});
+
+// Click fuera para contar fallos
+document.querySelector('main.stage-area')?.addEventListener('click', (e) => {
+  const target = e.target as HTMLElement;
+  if (!target.closest('.target-btn') && !target.closest('.draggable-window') && target.id !== 'draw-canvas') {
+    scoreTotal++;
+    updateScoreboard();
+  }
+});
+
+// Arrastre con Mouse Físico sobre Ventanas
+function setupMouseWindowDrag(card: HTMLElement): void {
+  const header = card.querySelector('.window-header') || card;
+  header.addEventListener('mousedown', (e: Event) => {
+    const mouseEv = e as MouseEvent;
+    mouseDraggedElement = card;
+    const rect = card.getBoundingClientRect();
+    mouseDragOffsetX = mouseEv.clientX - rect.left;
+    mouseDragOffsetY = mouseEv.clientY - rect.top;
+    card.classList.add('is-dragging');
+    e.preventDefault();
+  });
+}
+
+setupMouseWindowDrag(windowCard1);
+setupMouseWindowDrag(windowCard2);
+
+window.addEventListener('mousemove', (e: MouseEvent) => {
+  if (mouseDraggedElement) {
+    mouseDraggedElement.style.left = `${e.clientX - mouseDragOffsetX}px`;
+    mouseDraggedElement.style.top = `${e.clientY - mouseDragOffsetY}px`;
+  }
+
+  if (isMouseDrawing) {
+    const rect = drawCanvas.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    drawCtx.strokeStyle = '#00ffcc';
+    drawCtx.lineWidth = 3;
+    drawCtx.lineCap = 'round';
+    drawCtx.beginPath();
+    drawCtx.moveTo(lastDrawX, lastDrawY);
+    drawCtx.lineTo(cx, cy);
+    drawCtx.stroke();
+    lastDrawX = cx;
+    lastDrawY = cy;
+  }
+});
+
+window.addEventListener('mouseup', () => {
+  if (mouseDraggedElement) {
+    mouseDraggedElement.classList.remove('is-dragging');
+    mouseDraggedElement = null;
+  }
+  isMouseDrawing = false;
+});
+
+// Dibujo con Mouse Físico sobre el Canvas
+drawCanvas.addEventListener('mousedown', (e: MouseEvent) => {
+  isMouseDrawing = true;
+  const rect = drawCanvas.getBoundingClientRect();
+  lastDrawX = e.clientX - rect.left;
+  lastDrawY = e.clientY - rect.top;
+});
+
+// Reset de posición de tarjetas
+document.getElementById('btn-reset-cards')?.addEventListener('click', () => {
+  windowCard1.style.left = '30px';
+  windowCard1.style.top = '20px';
+  windowCard2.style.left = '270px';
+  windowCard2.style.top = '40px';
+});
+
+// Limpieza de Canvas
+document.getElementById('btn-clear-canvas')?.addEventListener('click', () => {
+  drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+});
+
+function resizeCanvas(): void {
+  drawCanvas.width = drawCanvas.offsetWidth;
+  drawCanvas.height = drawCanvas.offsetHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+setTimeout(resizeCanvas, 100);
+
+// ─── INICIALIZACIÓN DE MODELOS MEDIAPIPE (HANDS + FACE) ──────────────────────
+
+async function initModels(): Promise<void> {
   camText.innerText = 'Cargando modelos...';
   const vision = await FilesetResolver.forVisionTasks(
     'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
   );
 
-  landmarker = await HandLandmarker.createFromOptions(vision, {
+  // 1. Hand Landmarker
+  handLandmarker = await HandLandmarker.createFromOptions(vision, {
     baseOptions: {
       modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
       delegate: 'GPU'
     },
     runningMode: 'VIDEO',
     numHands: 1
+  });
+
+  // 2. Face Detector (Plano de Interacción al Pecho / Chin-Pinned)
+  faceDetector = await FaceDetector.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',
+      delegate: 'GPU'
+    },
+    runningMode: 'VIDEO'
   });
 
   camText.innerText = 'Cámara lista';
@@ -122,7 +246,6 @@ async function initMediaPipe(): Promise<void> {
 
 async function toggleCamera(): Promise<void> {
   if (isCameraActive) {
-    // Apagar
     const stream = videoEl.srcObject as MediaStream;
     stream?.getTracks().forEach((track) => track.stop());
     videoEl.srcObject = null;
@@ -135,10 +258,9 @@ async function toggleCamera(): Promise<void> {
     return;
   }
 
-  // Encender
   try {
-    if (!landmarker) {
-      await initMediaPipe();
+    if (!handLandmarker || !faceDetector) {
+      await initModels();
     }
 
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -171,7 +293,7 @@ let frameCount = 0;
 let lastFpsTime = performance.now();
 
 function processLoop(): void {
-  if (!isCameraActive || !landmarker || videoEl.paused || videoEl.ended) {
+  if (!isCameraActive || !handLandmarker || videoEl.paused || videoEl.ended) {
     return;
   }
 
@@ -180,11 +302,37 @@ function processLoop(): void {
   if (videoEl.currentTime !== lastVideoTime) {
     lastVideoTime = videoEl.currentTime;
 
-    const result = landmarker.detectForVideo(videoEl, startTime);
+    // Dimensiones reales de video
+    const videoWidth = videoEl.videoWidth || 640;
+    const videoHeight = videoEl.videoHeight || 480;
+    pipOverlay.width = videoWidth;
+    pipOverlay.height = videoHeight;
+
+    // ── 1. Detección de Rostro & Plano al Pecho ─────────────────────────────
+    if (faceDetector) {
+      const faceResult = faceDetector.detectForVideo(videoEl, startTime);
+      if (faceResult.detections && faceResult.detections.length > 0) {
+        const box = faceResult.detections[0].boundingBox;
+        if (box) {
+          chestPlaneManager.updateFromFaceBox(box, { width: videoWidth, height: videoHeight });
+          planeStatusBadge.innerText = 'ROSTRO FIJADO (MENTÓN)';
+          planeStatusBadge.style.color = 'var(--neon-green)';
+        }
+      } else {
+        planeStatusBadge.innerText = 'ZONA ERGONÓMICA BASE';
+        planeStatusBadge.style.color = 'var(--neon-amber)';
+      }
+    }
+
+    // Dibujar el plano del pecho y el rostro sobre el PiP
+    drawPiPOverlay(videoWidth, videoHeight);
+
+    // ── 2. Detección de Manos ───────────────────────────────────────────────
+    const handResult = handLandmarker.detectForVideo(videoEl, startTime);
     const latency = performance.now() - startTime;
     latencyCounter.innerText = `${Math.round(latency)} ms`;
 
-    // FPS Meter
+    // Medidor de FPS
     frameCount++;
     if (startTime - lastFpsTime >= 500) {
       const fps = Math.round((frameCount * 1000) / (startTime - lastFpsTime));
@@ -193,20 +341,20 @@ function processLoop(): void {
       lastFpsTime = startTime;
     }
 
-    if (result.landmarks && result.landmarks.length > 0) {
-      const rawLandmarks: Vec3[] = result.landmarks[0].map((lm) => ({
+    if (handResult.landmarks && handResult.landmarks.length > 0) {
+      const rawLandmarks: Vec3[] = handResult.landmarks[0].map((lm) => ({
         x: lm.x,
         y: lm.y,
         z: lm.z
       }));
 
-      // 1. One Euro Filter
+      // A. Filtro One Euro
       const smoothed = filterSet.filterLandmarks(rawLandmarks, startTime);
 
-      // 2. Escala normalizadora
+      // B. Escala normalizadora
       const handScale = computeHandScale(smoothed);
 
-      // 3. Empaquetar HandFrame
+      // C. Empaquetar HandFrame
       const frame: HandFrame = {
         t: startTime,
         landmarks: smoothed,
@@ -215,15 +363,15 @@ function processLoop(): void {
         score: 1.0
       };
 
-      // 4. Actualizar FSM
+      // D. Actualizar FSM
       const event = fsm.update(frame);
       const fsmState = fsm.getState();
       updateFsmBadge(fsmState);
 
-      // 5. Mapeo a pantalla completa
+      // E. Mapeo a pantalla mediante el Plano Ergonómico al Pecho (Chin-Pinned)
       const screenDim = { width: window.innerWidth, height: window.innerHeight };
       const pts = smoothed.map((lm) =>
-        mapCameraToScreen(lm.x, lm.y, config.activeZone, screenDim)
+        chestPlaneManager.mapPointToScreen(lm.x, lm.y, screenDim.width, screenDim.height)
       );
 
       const pointer = pts[8]; // yema del índice
@@ -232,18 +380,18 @@ function processLoop(): void {
       const pinchDist = computePinchDistance(smoothed, handScale);
       updateTelemetry(pinchDist, fsmState);
 
-      // 6. Renderizar afordancia vectorial SVG
+      // F. Renderizar afordancia vectorial SVG
       renderAffordanceOverlay(pts, fsmState);
 
-      // 7. Procesar evento de FSM sobre la interfaz web
-      handleGestureEvent(event, pointer);
+      // G. Procesar evento de FSM sobre la interfaz web
+      handleHandGestureEvent(event, pointer);
 
     } else {
       // Mano fuera de encuadre
       const event = fsm.update({ t: startTime, landmarks: [], handedness: 'Right', handScale: 0 });
       updateFsmBadge(fsm.getState());
       if (event?.type === 'drag-end') {
-        releaseDrag();
+        releaseHandDrag();
       }
       clearOverlay();
     }
@@ -252,15 +400,46 @@ function processLoop(): void {
   requestAnimationFrame(processLoop);
 }
 
-// ─── MANIPULACIÓN DE EVENTOS SINTÉTICOS EN LA WEB ─────────────────────────────
+// ─── DIBUJO DEL PLANO DEL PECHO EN EL PIP OVERLAY ───────────────────────────
+
+function drawPiPOverlay(w: number, h: number): void {
+  pipCtx.clearRect(0, 0, w, h);
+  const plane = chestPlaneManager.getPlane();
+
+  const px = plane.minX * w;
+  const py = plane.minY * h;
+  const pw = (plane.maxX - plane.minX) * w;
+  const ph = (plane.maxY - plane.minY) * h;
+
+  // Rectángulo del plano del pecho (anclado al mentón)
+  pipCtx.strokeStyle = plane.isFaceTracked ? '#00ffcc' : '#f59e0b';
+  pipCtx.lineWidth = 2;
+  pipCtx.setLineDash([6, 3]);
+  pipCtx.strokeRect(px, py, pw, ph);
+
+  // Relleno sutil
+  pipCtx.fillStyle = plane.isFaceTracked ? 'rgba(0, 255, 204, 0.12)' : 'rgba(245, 158, 11, 0.08)';
+  pipCtx.fillRect(px, py, pw, ph);
+
+  // Línea superior anclada al mentón
+  pipCtx.setLineDash([]);
+  pipCtx.strokeStyle = '#38bdf8';
+  pipCtx.lineWidth = 3;
+  pipCtx.beginPath();
+  pipCtx.moveTo(px, py);
+  pipCtx.lineTo(px + pw, py);
+  pipCtx.stroke();
+}
+
+// ─── MANIPULACIÓN DE EVENTOS DE GESTOS EN LA WEB ─────────────────────────────
 
 let lastHoveredElement: Element | null = null;
 
-function handleGestureEvent(
+function handleHandGestureEvent(
   event: import('../shared/events').GestureEvent | null,
   pointer: { x: number; y: number }
 ): void {
-  // Simulación de cursor hover
+  // Simulación de cursor hover continuo
   const el = document.elementFromPoint(pointer.x, pointer.y);
   if (el !== lastHoveredElement) {
     lastHoveredElement?.classList.remove('hover-sim');
@@ -268,14 +447,14 @@ function handleGestureEvent(
     lastHoveredElement = el;
   }
 
-  // Si se está arrastrando una ventana con Pinch / Drag
+  // Si se está arrastrando una ventana con Pinch / Drag de mano
   if (draggedElement) {
     draggedElement.style.left = `${pointer.x - dragOffsetX}px`;
     draggedElement.style.top = `${pointer.y - dragOffsetY}px`;
   }
 
-  // Si se está dibujando en el canvas de test
-  if (isDrawing) {
+  // Si se está dibujando en el canvas con el índice (Pinch o Trazo)
+  if (isHandDrawing) {
     const rect = drawCanvas.getBoundingClientRect();
     if (
       pointer.x >= rect.left &&
@@ -302,6 +481,7 @@ function handleGestureEvent(
   switch (event.type) {
     case 'drag-start': {
       playPinchSound();
+
       // Chequear si el usuario pellizcó sobre una ventana arrastrable
       const hit = document.elementFromPoint(pointer.x, pointer.y);
       const windowCard = hit?.closest('.draggable-window') as HTMLElement | null;
@@ -321,7 +501,7 @@ function handleGestureEvent(
         pointer.y >= rect.top &&
         pointer.y <= rect.bottom
       ) {
-        isDrawing = true;
+        isHandDrawing = true;
         lastDrawX = pointer.x - rect.left;
         lastDrawY = pointer.y - rect.top;
       }
@@ -329,34 +509,30 @@ function handleGestureEvent(
     }
 
     case 'drag-end': {
-      releaseDrag();
+      releaseHandDrag();
       break;
     }
 
     case 'click': {
-      playClickSound();
-      scoreTotal++;
-      // Buscar el elemento en la posición del buffer pre-click
-      const clickPos = mapCameraToScreen(event.at.x, event.at.y, config.activeZone, {
-        width: window.innerWidth,
-        height: window.innerHeight
-      });
+      // Posición del click recuperada del buffer pre-empuje (180ms atrás)
+      const clickPos = chestPlaneManager.mapPointToScreen(
+        event.at.x,
+        event.at.y,
+        window.innerWidth,
+        window.innerHeight
+      );
 
       const clickedEl = document.elementFromPoint(clickPos.x, clickPos.y);
       if (clickedEl) {
-        // Disparar click nativo
-        (clickedEl as HTMLElement).click?.();
-
-        // Verificar si es un botón de target practice
-        const targetBtn = clickedEl.closest('.target-btn');
+        const targetBtn = clickedEl.closest('.target-btn') as HTMLElement | null;
         if (targetBtn) {
-          scoreHits++;
-          targetBtn.classList.add('hit', 'active-sim');
-          setTimeout(() => targetBtn.classList.remove('hit', 'active-sim'), 300);
+          onTargetHit(targetBtn);
+        } else {
+          scoreTotal++;
+          (clickedEl as HTMLElement).click?.();
+          updateScoreboard();
         }
       }
-
-      updateScoreboard();
       break;
     }
 
@@ -367,12 +543,12 @@ function handleGestureEvent(
   }
 }
 
-function releaseDrag(): void {
+function releaseHandDrag(): void {
   if (draggedElement) {
     draggedElement.classList.remove('is-dragging');
     draggedElement = null;
   }
-  isDrawing = false;
+  isHandDrawing = false;
 }
 
 function updateScoreboard(): void {
@@ -401,7 +577,6 @@ const CAPSULE_RADII: Record<number, number[]> = {
 };
 
 function renderAffordanceOverlay(pts: { x: number; y: number }[], fsmState: string): void {
-  // L0: completamente invisible
   if (currentAffordanceLevel === 'L0') {
     clearOverlay();
     return;
@@ -568,18 +743,4 @@ document.querySelectorAll('.level-btn').forEach((btn) => {
   });
 });
 
-// Canvas Clear
-document.getElementById('btn-clear-canvas')?.addEventListener('click', () => {
-  drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
-});
-
-function resizeCanvas(): void {
-  const rect = drawCanvas.getBoundingClientRect();
-  drawCanvas.width = rect.width;
-  drawCanvas.height = rect.height;
-}
-
-window.addEventListener('resize', resizeCanvas);
-resizeCanvas();
-
-console.log('[Sandbox] AFK Live Web Sandbox inicializado exitosamente.');
+console.log('[Sandbox] AFK Live Web Sandbox inicializado exitosamente con Plano al Pecho.');
