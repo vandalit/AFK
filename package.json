@@ -28,6 +28,7 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "^1.1.1"
+    "@mediapipe/tasks-vision": "^1.1.1",
+    "koffi": "^3.3.3"
   }
 }

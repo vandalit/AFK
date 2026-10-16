@@ -67,19 +67,24 @@ Este plan de trabajo desglosa el desarrollo de **AFK** en 6 fases incrementales 
 ### Fase 2: Capa Vectorial de Afordancia ("Segundas Manos")
 > **Objetivo**: Construir la presencia visual de las manos del usuario proyectadas en el escritorio para consolidar el modelo mental de interacción.
 
-- [ ] **Renderizado de Mano Vectorial SVG (`src/overlay/hand-renderer.ts`)**:
-  - Diseñar paths SVG para los 5 dedos y la palma basados en los 21 landmarks cinemáticos.
-  - Aplicar estilos gráficos modernos: máscaras semitransparentes, tinte sutil y sombras de contraste para visibilidad sobre fondos claros u oscuros.
-  - **Alineación Obligatoria**: Garantizar que la punta distal del dedo índice coincida pixel por pixel con el punto de acción (hotspot) del cursor del sistema.
-- [ ] **Controlador de Niveles de Afordancia (`src/overlay/affordance-fade.ts`)**:
-  - Implementar los 4 modos de renderizado:
-    - `L3`: Silueta y mano completa con volumen.
-    - `L2`: Esqueleto articular (líneas y nodos).
-    - `L1`: Puntos flotantes en las yemas de los dedos.
-    - `L0`: Invisible (solo el cursor del sistema).
-  - Permitir alternar los modos manualmente mediante configuración.
-- [ ] **Criterio de Aceptación**:
-  - El usuario percibe la mano gráfica como una extensión natural de su propia mano ("segunda mano"), sin desfasajes geométricos con respecto al cursor real.
+- [x] **Renderizado de Mano Vectorial SVG (`src/overlay/hand-renderer.ts`)**:
+  - Cápsulas SVG volumétricas con degradé por cada falange de los 5 dedos.
+  - Polígono de palma semitransparente con radialGradient.
+  - Filtro `handGlow` (feGaussianBlur + feComposite) sobre el grupo volumétrico.
+  - Articulaciones como círculos blancos sobre cada nodo.
+  - **Alineación garantizada**: Landmark 8 → mismo mapeo `mapCameraToScreen` que el cursor del SO.
+- [x] **Controlador de Niveles de Afordancia (`src/overlay/affordance-fade.ts`)**:
+  - `L3`: Silueta volumétrica completa (cápsulas + palma + glow).
+  - `L2`: Esqueleto articular (líneas y nodos, sin volumen).
+  - `L1`: Solo círculo en la yema del índice.
+  - `L0`: Invisible (solo el cursor del sistema).
+  - Alternancia manual desde el System Tray (ya implementado).
+- [x] **Feedback reactivo de estado (`PUSH_ARMED`)**:
+  - El puntero del índice cambia de neón verde a rojo urgente al armarse el click.
+  - Conectado al campo `currentGesture` del `OverlayFramePayload`.
+- [x] **Criterio de Aceptación**:
+  - 4 niveles de afordancia funcionando y alternables desde el Tray.
+  - El usuario percibe la mano gráfica como una extensión natural de su propia mano.
 
 ---
 

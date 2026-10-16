@@ -26,19 +26,19 @@ Construir el POC utilizando **Electron + TypeScript** (gestionado con `electron-
 
 ## ADR-02: Estrategia de Inyección de Mouse Nativo en Windows
 
-### Estado: EN EVALUACIÓN TÉCNICA (Fase 0/1)
+### Estado: APROBADO E IMPLEMENTADO (Fase 1)
 ### Contexto:
-Para mover el cursor del sistema y ejecutar clicks sobre el escritorio de Windows, la aplicación necesita interactuar con la API nativa de Windows (User32 / `SendInput`).
+Para mover el cursor del sistema y ejecutar clicks sobre el escritorio de Windows, la aplicación necesita interactuar con la API nativa de Windows (User32 / `SendInput` / `SetCursorPos`).
 
 ### Alternativas Evaluadas:
-1. **`robotjs`**: Históricamente popular, pero prácticamente abandonado. Frecuentemente falla al compilar contra versiones recientes de Electron (Node ABI moderna) requiriendo `electron-rebuild` complejo y dependencias de Python/Visual C++ Build Tools que complican el andamiaje.
-2. **`@nut-tree/nut-js`**: Bien mantenido, provee soporte cross-platform, pero puede añadir capas de abstracción innecesarias y latencia adicional en polling de mouse.
-3. **Llamada Directa a `SendInput` vía FFI (`koffi` o módulo C++ minimalista)**:
-   - `koffi` es una biblioteca FFI de última generación para Node/Electron, extremadamente rápida y que no requiere compilación C++ en el entorno del desarrollador para cargar `user32.dll`.
-   - `SendInput` es la función oficial recomendada por Microsoft para inyección sintética de eventos de mouse y teclado.
+1. **`robotjs`**: Obsoleto y con fallos de compilación contra Node ABI de Electron v41.
+2. **`@nut-tree/nut-js`**: Mayor sobrecarga de dependencias binarias.
+3. **`koffi` (FFI nativo moderno)**:
+   - Permite enlazar `user32.dll` (`SetCursorPos` y `mouse_event`) en milisegundos sin requerir compiladores C++ locales.
+   - Rendimiento nativo de baja latencia.
 
 ### Decisión:
-Aislar completamente el comportamiento tras la interfaz `CursorDriver` (`src/main/cursor-driver.ts`). Durante la Fase 0/1 se evaluará `koffi` con `SendInput` o una librería precompilada validada con la versión exacta de Electron instalada, consultando al usuario antes de fijar la dependencia final.
+Implementar `WindowsCursorDriver` usando **`koffi`** para enlazar `SetCursorPos` y `mouse_event` de `user32.dll`. La selección del driver se delega a `createCursorDriver()`, que instancia `WindowsCursorDriver` en `win32` y un `NullCursorDriver` seguro en entornos de desarrollo Linux/WSL para prevenir caídas.
 
 ---
 

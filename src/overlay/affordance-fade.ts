@@ -15,12 +15,17 @@ export class AffordanceFadeController {
     return this.currentLevel;
   }
 
-  /** Determina si se debe dibujar el esqueleto completo (L2 o L3) */
+  /** L3: Silueta volumétrica con cápsulas y palma */
+  public shouldRenderVolume(): boolean {
+    return this.currentLevel === 'L3';
+  }
+
+  /** L2 o L3: Esqueleto articular (líneas y nodos) */
   public shouldRenderSkeleton(): boolean {
     return this.currentLevel === 'L2' || this.currentLevel === 'L3';
   }
 
-  /** Determina si se debe dibujar la punta del índice (L1, L2 o L3) */
+  /** L1, L2 o L3: Círculo del puntero en la yema del índice */
   public shouldRenderPointer(): boolean {
     return this.currentLevel !== 'L0';
   }
