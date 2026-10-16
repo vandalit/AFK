@@ -1,6 +1,6 @@
 import { HandFrame, GestureEvent } from '../shared/events';
 import { GestureFSMInterface, GestureState } from './types';
-import { isIndexPointing, isOpenPalm } from './features';
+import { isIndexPointing, isOpenPalm, computePinchDistance } from './features';
 import { DEFAULT_CONFIG } from '../shared/config';
 import type { AppConfig } from '../shared/config';
 
@@ -26,15 +26,17 @@ const MAX_BUFFER_FRAMES = 60;
 // ─── FSM ─────────────────────────────────────────────────────────────────────
 
 /**
- * Máquina de Estados Finita de Gestos — Fase 3.
+ * Máquina de Estados Finita de Gestos — Fase 4 (Pinch / Drag).
  *
  * Módulo PURO: sin dependencias de Electron, DOM, ni APIs nativas.
  * Solo consume HandFrame y emite GestureEvent.
  *
  * Estados:
  *   IDLE ──(pointing detected)──▶ POINT
+ *   POINT ──(pinch.enter)───────▶ DRAG
  *   POINT ──(scaleRate spike)───▶ PUSH_ARMED
  *   POINT ──(open palm dwell)───▶ CLUTCH
+ *   DRAG ──(pinch.exit)─────────▶ emit drag-end → POINT
  *   PUSH_ARMED ──(rate drops)───▶ emit CLICK → POINT
  *   PUSH_ARMED ──(timeout)──────▶ POINT
  *   CLUTCH ──(not open palm)────▶ POINT
@@ -50,6 +52,7 @@ export class GestureFSM implements GestureFSMInterface {
 
   // ── Buffer circular de posiciones del índice ──────────────────────────────
   private positionBuffer: BufferedPosition[] = [];
+  private lastPosition: { x: number; y: number } = { x: 0.5, y: 0.5 };
 
   // ── Timers de estado ──────────────────────────────────────────────────────
   private pushArmedAt: number = 0;
@@ -66,6 +69,11 @@ export class GestureFSM implements GestureFSMInterface {
 
     // ── Mano fuera de encuadre o frame inválido ────────────────────────────
     if (!landmarks || landmarks.length < 21) {
+      if (this.currentState === 'DRAG') {
+        const last = { ...this.lastPosition };
+        this.reset();
+        return { type: 'drag-end', at: last };
+      }
       if (this.currentState !== 'IDLE') {
         this.reset();
         return { type: 'hand-lost' };
@@ -74,6 +82,7 @@ export class GestureFSM implements GestureFSMInterface {
     }
 
     const indexTip = landmarks[8];
+    this.lastPosition = { x: indexTip.x, y: indexTip.y };
 
     // ── Actualizar buffer circular de posiciones ───────────────────────────
     this.positionBuffer.push({ x: indexTip.x, y: indexTip.y, t });
@@ -95,9 +104,10 @@ export class GestureFSM implements GestureFSMInterface {
     this.prevScale = handScale;
     this.prevScaleTime = t;
 
-    // ── Posturas ───────────────────────────────────────────────────────────
+    // ── Posturas y distancias ──────────────────────────────────────────────
     const pointing  = isIndexPointing(landmarks);
     const openPalm  = isOpenPalm(landmarks);
+    const pinchDist = computePinchDistance(landmarks, handScale);
 
     // ════════════════════════════════════════════════════════════════════════
     //  IDLE
@@ -114,6 +124,12 @@ export class GestureFSM implements GestureFSMInterface {
     //  POINT
     // ════════════════════════════════════════════════════════════════════════
     if (this.currentState === 'POINT') {
+      // Gesto de pinza (Pinch) → iniciar arrastre (DRAG)
+      if (pinchDist < this.config.pinch.enter) {
+        this.currentState = 'DRAG';
+        return { type: 'drag-start', at: { x: indexTip.x, y: indexTip.y } };
+      }
+
       // Palma abierta → dwell hacia CLUTCH
       if (openPalm) {
         if (this.clutchStartAt === 0) {
@@ -142,6 +158,20 @@ export class GestureFSM implements GestureFSMInterface {
       }
 
       // Movimiento normal
+      return { type: 'pointer-move', x: indexTip.x, y: indexTip.y };
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  DRAG (Pinch sostenido con histéresis)
+    // ════════════════════════════════════════════════════════════════════════
+    if (this.currentState === 'DRAG') {
+      // Histéresis: si la distancia supera el umbral de salida (pinch.exit), soltar
+      if (pinchDist > this.config.pinch.exit) {
+        this.currentState = 'POINT';
+        return { type: 'drag-end', at: { x: indexTip.x, y: indexTip.y } };
+      }
+
+      // Continuar arrastrando en la posición del índice
       return { type: 'pointer-move', x: indexTip.x, y: indexTip.y };
     }
 

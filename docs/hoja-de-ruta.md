@@ -118,22 +118,33 @@ Este plan de trabajo desglosa el desarrollo de **AFK** en 6 fases incrementales 
 
 ---
 
-### Fase 4: Manipulación Completa (Pinch, Drag) y Panel en Vivo
-> **Objetivo**: Ampliar el repertorio gestual a manipulaciones complejas de ventanas y ofrecer un entorno de ajuste dinámico de constantes.
+### Fase 4: Manipulación Completa (Pinch, Drag) & Web Sandbox en Vivo
+> **Objetivo**: Ampliar el repertorio gestual a manipulaciones complejas de ventanas y ofrecer un entorno de validación interactiva y ajuste dinámico de constantes.
 
-- [ ] **Gesto de Arrastre (Pinch / Drag)**:
-  - Medir la distancia normalizada entre pulgar e índice.
-  - Implementar histéresis: activación en `pinch.enter` (distancia estrecha) y liberación en `pinch.exit` (distancia amplia).
-  - Emitir `drag-start` (MouseDown) y `drag-end` (MouseUp).
-- [ ] **Panel de Calibración en Vivo (`src/panel/`)**:
-  - Ventana de ajustes accesible desde el Tray.
-  - Sliders interactivos conectados a `shared/config.ts`:
-    - `oneEuro.minCutoff` y `oneEuro.beta`
-    - Coeficientes de zona activa
-    - Umbral de push (`scaleRate`) y tamaño del buffer (`push.bufferMs`)
-    - Tiempos de retención de clutch y gesto maestro
-- [ ] **Criterio de Aceptación**:
-  - Capacidad demostrada de agarrar la barra de título de una ventana de Windows mediante pinch, moverla a través del escritorio y soltarla fluidamente.
+- [x] **Gesto de Arrastre (Pinch / Drag)**:
+  - Medir la distancia euclidiana entre pulgar (4) e índice (8) normalizada por `handScale` (`computePinchDistance`).
+  - Histéresis robusta: activación en `pinch.enter` (0.15) y liberación en `pinch.exit` (0.22).
+  - Máquina de estados: `POINT` → `DRAG` con emisión de `drag-start` (MouseDown) y `drag-end` (MouseUp).
+  - Resiliencia: liberación garantizada de arrastre al perder la mano o pausar tracking.
+- [x] **Integración en Driver y Main (`src/main/index.ts`)**:
+  - Routing de `drag-start` a `cursorDriver.down('left')`.
+  - Routing de `drag-end` a `cursorDriver.up('left')`.
+  - Capa de overlay con feedback ámbar neón y conector de pinza en `DRAG`.
+- [x] **Interactive Live Web Sandbox (`src/sandbox/` & `npm run sandbox`)**:
+  - SPA de alta fidelidad para pruebas completas en navegador con webcam real.
+  - Ingesta WebRTC + MediaPipe Tasks Vision + One Euro Filter + HandScale + FSM en tiempo real.
+  - Capa de afordancia vectorial SVG activa con alternancia de niveles L0, L1, L2, L3.
+  - Pruebas interactivas:
+    - **Target Practice**: validación de clicks con buffer pre-click de 180ms y medidor de efectividad.
+    - **Ventanas arrastrables**: prueba real de Pinch / Drag con tarjetas movibles.
+    - **Lienzo de dibujo continuo**: comprobación de ausencia de jitter con One Euro.
+    - **Panel de calibración en vivo**: sliders dinámicos para `oneEuro`, `activeZone`, `scaleRate`, `bufferMs`, `pinch.enter` y `pinch.exit`.
+    - **HUD de telemetría**: medidores dinámicos de FPS, latencia, `scaleRate` y distancia de pinch.
+- [x] **Suite de Tests Unitarios (`tests/fsm-gestures.test.ts`)**:
+  - 23 tests de gestos (36 tests en total acumulado en 5 suites).
+  - Verificación matemática de histéresis y liberación segura.
+- [x] **Criterio de Aceptación**:
+  - Arrastre fluido de elementos mediante pinch con feedback visual reactivo y playground web operativo.
 
 ---
 

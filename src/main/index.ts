@@ -29,6 +29,7 @@ function toggleTracking(): void {
   if (!isTrackingActive) {
     fsm.reset();
     isCursorFrozen = false;
+    cursorDriver.up('left');
     sendOverlayPayload(null, 'idle');
   }
 }
@@ -105,6 +106,7 @@ async function bootstrap(): Promise<void> {
     let gestureLabel: OverlayFramePayload['currentGesture'] = 'idle';
     if (fsmState === 'PUSH_ARMED') gestureLabel = 'PUSH_ARMED';
     else if (fsmState === 'CLUTCH')     gestureLabel = 'CLUTCH';
+    else if (fsmState === 'DRAG')       gestureLabel = 'DRAG';
     else if (fsmState === 'POINT')      gestureLabel = 'pointer-move';
 
     // ── Routing de eventos de la FSM ────────────────────────────────────────
@@ -116,6 +118,28 @@ async function bootstrap(): Promise<void> {
             const { x, y } = mapCameraToScreen(event.x, event.y, DEFAULT_CONFIG.activeZone, screenDimensions);
             cursorDriver.move(x, y);
           }
+          break;
+        }
+
+        case 'drag-start': {
+          if (!isCursorFrozen) {
+            const { x, y } = mapCameraToScreen(event.at.x, event.at.y, DEFAULT_CONFIG.activeZone, screenDimensions);
+            cursorDriver.move(x, y);
+            cursorDriver.down('left');
+            console.log(`[Main] 🤏 Pinch / Drag START en (${x}, ${y})`);
+          }
+          gestureLabel = 'DRAG';
+          break;
+        }
+
+        case 'drag-end': {
+          if (!isCursorFrozen) {
+            const { x, y } = mapCameraToScreen(event.at.x, event.at.y, DEFAULT_CONFIG.activeZone, screenDimensions);
+            cursorDriver.move(x, y);
+            cursorDriver.up('left');
+            console.log(`[Main] ✋ Pinch / Drag END en (${x}, ${y})`);
+          }
+          gestureLabel = 'pointer-move';
           break;
         }
 
@@ -141,6 +165,7 @@ async function bootstrap(): Promise<void> {
 
         case 'hand-lost': {
           isCursorFrozen = false;
+          cursorDriver.up('left'); // Seguridad para no dejar arrastre colgado
           gestureLabel = 'hand-lost';
           break;
         }

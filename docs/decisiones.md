@@ -133,3 +133,22 @@ El público objetivo del producto incluye usuarios, diseñadores y estudiantes h
 3. **Factoría de Drivers (`createCursorDriver`)**:
    - Desacoplar la inicialización mediante detección de `process.platform` (`win32`, `darwin`, `linux`, `browser`), garantizando que el código no falle ni genere errores de compilación cruzada.
 
+---
+
+## ADR-09: Histéresis de Pinch/Drag y Despacho Sintético en Web Sandbox
+
+### Estado: APROBADO E IMPLEMENTADO (Fase 4)
+### Contexto:
+El gesto de arrastre (Pinch) requiere unir las yemas del pulgar y del índice. Si se utiliza un único umbral de distancia euclidiana para activar y desactivar el arrastre, pequeñas oscilaciones naturales de la mano en el límite del umbral provocan el fenómeno de *chattering* (pulsaciones y liberaciones rápidas e involuntarias del mouse). Además, se requiere probar el sistema de forma interactiva en la web sin requerir permisos de sistema operativo ni compilaciones binarias.
+
+### Decisión:
+1. **Histéresis con Umbral Doble**:
+   - Entrada a `DRAG` (`pinch.enter = 0.15 * handScale`).
+   - Salida de `DRAG` a `POINT` (`pinch.exit = 0.22 * handScale`).
+   - La zona intermedia [0.15, 0.22] mantiene el estado actual sin transicionar, erradicando el chattering.
+2. **Liberación de Seguridad Automática**:
+   - Si la mano sale del encuadre o se pierde el tracking mientras está en `DRAG`, la FSM emite inmediatamente un evento `drag-end` tanto en Electron como en el Sandbox para evitar que el botón del mouse quede presionado indefinidamente.
+3. **Simulación de Eventos DOM en Sandbox**:
+   - En el Web Sandbox, la FSM despacha eventos usando `document.elementFromPoint(x, y)` para manipular ventanas, botones con buffer de clicks y lienzos de dibujo en tiempo real, complementado con feedback de audio sintético ultra-rápido vía Web Audio API.
+
+

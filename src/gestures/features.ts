@@ -26,6 +26,16 @@ export function computeHandScale(landmarks: Vec3[]): number {
   return distance3D(landmarks[0], landmarks[9]) || 1.0;
 }
 
+/**
+ * Calcula la distancia normalizada entre la yema del pulgar (4) y la yema del índice (8)
+ * en proporción a la escala de la mano (handScale).
+ * Valores menores indican aproximación (pinch).
+ */
+export function computePinchDistance(landmarks: Vec3[], handScale: number): number {
+  if (landmarks.length < 9 || handScale <= 0) return 1.0;
+  return distance3D(landmarks[4], landmarks[8]) / handScale;
+}
+
 // ─── Detección de posturas ────────────────────────────────────────────────────
 
 /**

@@ -103,11 +103,16 @@ function updateRenderer(payload: OverlayFramePayload | HandFrame | null): void {
     indexDot.setAttribute('cy', pts[8].y.toString());
     indexDot.style.display = 'block';
 
-    // Feedback de estado: PUSH_ARMED pone el punto rojo
+    // Feedback de estado: PUSH_ARMED pone el punto rojo, DRAG ámbar
     if (currentGesture === 'PUSH_ARMED') {
       indexDot.classList.add('push-armed');
+      indexDot.classList.remove('dragging');
+    } else if (currentGesture === 'DRAG') {
+      indexDot.classList.remove('push-armed');
+      indexDot.classList.add('dragging');
     } else {
       indexDot.classList.remove('push-armed');
+      indexDot.classList.remove('dragging');
     }
   } else {
     indexDot.style.display = 'none';

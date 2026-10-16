@@ -17,6 +17,7 @@ out/
 dist/
 build/
 .electron-vite/
+src/sandbox/dist/
 
 # Archivos temporales y metadatos del SO
 .DS_Store

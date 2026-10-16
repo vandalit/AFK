@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isIndexPointing, isOpenPalm } from '../src/gestures/features';
+import { isIndexPointing, isOpenPalm, computePinchDistance } from '../src/gestures/features';
 import { GestureFSM } from '../src/gestures/fsm';
 import type { Vec3 } from '../src/shared/events';
 import type { HandFrame } from '../src/shared/events';
@@ -217,5 +217,108 @@ describe('GestureFSM — transiciones de estado', () => {
       expect(event.engaged).toBe(false);
     }
     expect(fsm.getState()).toBe('POINT');
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  Fase 4: Gesto de Arrastre (Pinch / Drag) e Histéresis
+  // ══════════════════════════════════════════════════════════════════════════
+
+  it('computePinchDistance calcula la distancia relativa a handScale', () => {
+    const lm = pointingLandmarks();
+    lm[4] = { x: 0.5, y: 0.25, z: 0 }; // Pulgar en la misma posición del índice (distancia 0)
+    expect(computePinchDistance(lm, 0.20)).toBe(0);
+
+    lm[4] = { x: 0.52, y: 0.25, z: 0 }; // Distancia 0.02
+    expect(computePinchDistance(lm, 0.20)).toBeCloseTo(0.10, 4);
+
+    expect(computePinchDistance([], 0.20)).toBe(1.0);
+    expect(computePinchDistance(lm, 0)).toBe(1.0);
+  });
+
+  it('POINT → DRAG: juntar pulgar e índice por debajo de pinch.enter emite drag-start', () => {
+    const fsm = new GestureFSM(DEFAULT_CONFIG);
+    fsm.update(makeFrame(pointingLandmarks(), 1000, 0.20)); // IDLE → POINT
+
+    // Pulgar a 0.02 del índice (pinchDist = 0.10 < enter 0.15)
+    const lm = pointingLandmarks();
+    lm[4] = { x: lm[8].x + 0.02, y: lm[8].y, z: 0 };
+
+    const event = fsm.update(makeFrame(lm, 1016, 0.20));
+    expect(fsm.getState()).toBe('DRAG');
+    expect(event?.type).toBe('drag-start');
+    if (event?.type === 'drag-start') {
+      expect(event.at.x).toBeCloseTo(lm[8].x);
+      expect(event.at.y).toBeCloseTo(lm[8].y);
+    }
+  });
+
+  it('DRAG: mover la mano manteniendo el pinch emite pointer-move continuo', () => {
+    const fsm = new GestureFSM(DEFAULT_CONFIG);
+    fsm.update(makeFrame(pointingLandmarks(), 1000, 0.20)); // → POINT
+
+    const lm1 = pointingLandmarks();
+    lm1[4] = { x: lm1[8].x + 0.02, y: lm1[8].y, z: 0 };
+    fsm.update(makeFrame(lm1, 1016, 0.20)); // → DRAG
+
+    // Mover mano a nueva posición manteniendo pinch
+    const lm2 = pointingLandmarks();
+    lm2[8] = { x: 0.70, y: 0.40, z: 0 };
+    lm2[4] = { x: 0.72, y: 0.40, z: 0 };
+
+    const event = fsm.update(makeFrame(lm2, 1033, 0.20));
+    expect(fsm.getState()).toBe('DRAG');
+    expect(event?.type).toBe('pointer-move');
+    if (event?.type === 'pointer-move') {
+      expect(event.x).toBeCloseTo(0.70);
+      expect(event.y).toBeCloseTo(0.40);
+    }
+  });
+
+  it('Histéresis de Pinch: en zona intermedia (0.18) no activa drag desde POINT, pero lo mantiene si ya estaba en DRAG', () => {
+    const fsm = new GestureFSM(DEFAULT_CONFIG); // enter=0.15, exit=0.22
+    fsm.update(makeFrame(pointingLandmarks(), 1000, 0.20)); // → POINT
+
+    // Distancia intermedia: 0.036 / 0.20 = 0.18 (entre 0.15 y 0.22)
+    const lmMid = pointingLandmarks();
+    lmMid[4] = { x: lmMid[8].x + 0.036, y: lmMid[8].y, z: 0 };
+
+    // Desde POINT: no debe entrar a DRAG porque 0.18 >= enter (0.15)
+    const ev1 = fsm.update(makeFrame(lmMid, 1016, 0.20));
+    expect(fsm.getState()).toBe('POINT');
+    expect(ev1?.type).toBe('pointer-move');
+
+    // Ahora pellizcar estrecho (0.02 / 0.20 = 0.10 < 0.15) → entra a DRAG
+    const lmTight = pointingLandmarks();
+    lmTight[4] = { x: lmTight[8].x + 0.02, y: lmTight[8].y, z: 0 };
+    const ev2 = fsm.update(makeFrame(lmTight, 1033, 0.20));
+    expect(fsm.getState()).toBe('DRAG');
+    expect(ev2?.type).toBe('drag-start');
+
+    // Abrir ligeramente hasta la zona intermedia (0.18): DEBE PERMANECER EN DRAG por histéresis
+    const ev3 = fsm.update(makeFrame(lmMid, 1050, 0.20));
+    expect(fsm.getState()).toBe('DRAG');
+    expect(ev3?.type).toBe('pointer-move');
+
+    // Abrir más allá de exit (0.05 / 0.20 = 0.25 > 0.22) → sale de DRAG a POINT y emite drag-end
+    const lmWide = pointingLandmarks();
+    lmWide[4] = { x: lmWide[8].x + 0.05, y: lmWide[8].y, z: 0 };
+    const ev4 = fsm.update(makeFrame(lmWide, 1066, 0.20));
+    expect(fsm.getState()).toBe('POINT');
+    expect(ev4?.type).toBe('drag-end');
+  });
+
+  it('DRAG: pérdida de mano emite drag-end para seguridad del sistema operativo', () => {
+    const fsm = new GestureFSM(DEFAULT_CONFIG);
+    fsm.update(makeFrame(pointingLandmarks(), 1000, 0.20)); // → POINT
+
+    const lm = pointingLandmarks();
+    lm[4] = { x: lm[8].x + 0.02, y: lm[8].y, z: 0 };
+    fsm.update(makeFrame(lm, 1016, 0.20)); // → DRAG
+    expect(fsm.getState()).toBe('DRAG');
+
+    // Pérdida súbita de mano (frame sin landmarks)
+    const event = fsm.update({ t: 1033, landmarks: [], handedness: 'Right', handScale: 0 });
+    expect(event?.type).toBe('drag-end');
+    expect(fsm.getState()).toBe('IDLE');
   });
 });
