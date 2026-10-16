@@ -499,20 +499,22 @@ input[type="range"]::-webkit-slider-thumb {
 
 .pip-webcam-container {
   width: 100%;
-  height: 135px;
+  aspect-ratio: 16 / 9;
   border-radius: 8px;
   overflow: hidden;
   position: relative;
   border: 1px solid var(--border-subtle);
   background: #000;
   flex-shrink: 0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
 video#webcam-stream {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   transform: scaleX(-1); /* Modo espejo */
+  display: block;
 }
 
 canvas#pip-overlay {
@@ -542,11 +544,11 @@ canvas#pip-overlay {
 /* ── OVERLAY VECTORIAL & PUNTERO ────────────────────────────── */
 
 svg#virtual-overlay {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
   pointer-events: none;
   z-index: 100;
 }

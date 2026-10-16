@@ -5,8 +5,10 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
-    "preview": "electron-vite preview",
+    "build": "vite build --config sandbox.vite.config.ts",
+    "build:sandbox": "vite build --config sandbox.vite.config.ts",
+    "build:electron": "electron-vite build",
+    "preview": "vite preview --config sandbox.vite.config.ts",
     "sandbox": "vite --config sandbox.vite.config.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

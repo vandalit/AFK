@@ -132,23 +132,43 @@ Este plan de trabajo desglosa el desarrollo de **AFK** en 6 fases incrementales 
   - Capa de overlay con feedback ámbar neón y conector de pinza en `DRAG`.
 - [x] **Interactive Live Web Sandbox (`src/sandbox/` & `npm run sandbox`)**:
   - SPA de alta fidelidad para pruebas completas en navegador con webcam real.
-  - Ingesta WebRTC + MediaPipe Tasks Vision + One Euro Filter + HandScale + FSM en tiempo real.
+  - Ingesta WebRTC + MediaPipe Tasks Vision (HandLandmarker + FaceDetector) + One Euro Filter + HandScale + FSM en tiempo real.
   - Capa de afordancia vectorial SVG activa con alternancia de niveles L0, L1, L2, L3.
+  - **Plano Ergonómico al Pecho (Chin-Pinned)**: Anclaje dinámico del borde superior bajo el mentón del usuario y proyección isotrópica 1:1 proporcional al ratio de pantalla (16:9), permitiendo alcanzar el 100% del alto sin fatiga y sin chocar con el límite inferior del sensor.
+  - **Zonas de Seguridad Estilo Broadcast (SMPTE / EBU)**:
+    - *Action Safe (93%)*: Brackets en las cuatro esquinas indicando la zona óptima de movimiento.
+    - *Title Safe (90%)*: Contorno punteado interior de referencia.
+    - *Cruz Central y Guías de Mentón/Fondo*: Identificación visual inmediata de límites físicos.
+    - *Alerta de Proximidad a Bordes*: Detección anticipada cuando la mano se aproxima al límite de percepción óptica del sensor o zona muerta del rostro.
+  - **PiP Webcam Fidedigno (Sin Recorte)**:
+    - Relación de aspecto dinámica del contenedor según el stream nativo de la cámara (evita `object-fit: cover` engañoso).
+    - Representación gráfica en tiempo real de la mano (muñeca y yema del índice) dentro del monitor virtual proyectado en el PiP.
   - Pruebas interactivas:
     - **Target Practice**: validación de clicks con buffer pre-click de 180ms y medidor de efectividad.
     - **Ventanas arrastrables**: prueba real de Pinch / Drag con tarjetas movibles.
     - **Lienzo de dibujo continuo**: comprobación de ausencia de jitter con One Euro.
     - **Panel de calibración en vivo**: sliders dinámicos para `oneEuro`, `activeZone`, `scaleRate`, `bufferMs`, `pinch.enter` y `pinch.exit`.
     - **HUD de telemetría**: medidores dinámicos de FPS, latencia, `scaleRate` y distancia de pinch.
-- [x] **Suite de Tests Unitarios (`tests/fsm-gestures.test.ts`)**:
-  - 23 tests de gestos (36 tests en total acumulado en 5 suites).
-  - Verificación matemática de histéresis y liberación segura.
+- [x] **Suite de Tests Unitarios (`tests/`)**:
+  - 41 tests acumulados en 6 suites (`fsm-gestures`, `chest-plane`, `calibration`, `one-euro`, `cursor-driver`, `fsm`).
+  - Verificación matemática de histéresis, mapeo isotrópico y liberación segura.
 - [x] **Criterio de Aceptación**:
-  - Arrastre fluido de elementos mediante pinch con feedback visual reactivo y playground web operativo.
+  - Arrastre fluido mediante pinch, control ergonómico al pecho sin elevación de brazo, feedback de zonas de seguridad en tiempo real y playground web operativo.
 
 ---
 
-### Fase 5: Pulido, Multi-pantalla y Resiliencia
+### Estado Actual del Proyecto: Checkpoint de Calibración & Pausa
+
+> **Estado**: **Fases 0 a 4 Completadas — Pausa de Calibración en Fase 4**.
+> 
+> El andamiaje arquitectónico, la máquina de estados, el driver de cursor, el renderer de afordancia vectorial, el modelo del plano al pecho y el entorno interactivo de pruebas están completamente construidos y operativos.
+> 
+> **Motivo de la Pausa**:
+> El control óptico monocular mediante webcam genérica presenta desafíos de tolerancia física y variabilidad de encuadre en el límite inferior del sensor. Habiendo implementado el plano fidedigno al pecho, las zonas de seguridad de video y el PiP sin recortes, el proyecto se congela en este estado limpio y determinista para evaluar la ergonomía de uso antes de avanzar a la Fase 5 (Multi-monitor y adaptaciones avanzadas).
+
+---
+
+### Fase 5: Pulido, Multi-pantalla y Resiliencia (Backlog / Futuro)
 > **Objetivo**: Consolidar la experiencia de usuario para uso diario continuo y situaciones de entorno complejas.
 
 - [ ] **Gestión de Pantallas y DPI**:

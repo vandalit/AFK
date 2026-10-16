@@ -148,6 +148,15 @@
           </div>
         </div>
 
+        <!-- Tamaño Mano Virtual -->
+        <div class="control-group">
+          <div class="control-header">
+            <span class="control-label">Tamaño Mano Virtual</span>
+            <span class="control-val" id="val-handScale">50%</span>
+          </div>
+          <input type="range" id="slider-handScale" min="0.20" max="1.20" step="0.05" value="0.50" />
+        </div>
+
         <!-- Filtro One Euro -->
         <div class="control-group">
           <div class="control-header">
@@ -255,6 +264,8 @@
         <feComposite in="SourceGraphic" in2="blur" operator="over"/>
       </filter>
     </defs>
+    <!-- Zona de seguridad estilo broadcast -->
+    <g id="safe-zone-group"></g>
     <!-- Capas SVG en orden de profundidad -->
     <g id="volume-group" filter="url(#handGlow)"></g>
     <g id="skeleton-group"></g>

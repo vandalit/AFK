@@ -1,7 +1,7 @@
 import { FilesetResolver, HandLandmarker, FaceDetector } from '@mediapipe/tasks-vision';
 import { HandFilterSet } from '../vision/one-euro';
 import { computeHandScale, computePinchDistance } from '../gestures/features';
-import { ChestPlaneManager } from '../gestures/chest-plane';
+import { ChestPlaneManager, type BoundaryProximity } from '../gestures/chest-plane';
 import { GestureFSM } from '../gestures/fsm';
 import { DEFAULT_CONFIG } from '../shared/config';
 import type { AppConfig } from '../shared/config';
@@ -19,6 +19,7 @@ let faceDetector: FaceDetector | null = null;
 let isCameraActive = false;
 let currentAffordanceLevel: AffordanceLevel = 'L3';
 let isCursorFrozen = false;
+let virtualHandScale = 0.50;
 
 // ─── ELEMENTOS DOM ───────────────────────────────────────────────────────────
 
@@ -43,6 +44,7 @@ const virtualCursor = document.getElementById('virtual-cursor') as unknown as SV
 const volumeGroup = document.getElementById('volume-group') as unknown as SVGGElement;
 const skeletonGroup = document.getElementById('skeleton-group') as unknown as SVGGElement;
 const pinchConnector = document.getElementById('pinch-connector') as unknown as SVGLineElement;
+const safeZoneGroup = document.getElementById('safe-zone-group') as unknown as SVGGElement;
 
 // Canvas de dibujo
 const drawCanvas = document.getElementById('draw-canvas') as HTMLCanvasElement;
@@ -308,13 +310,25 @@ function processLoop(): void {
     pipOverlay.width = videoWidth;
     pipOverlay.height = videoHeight;
 
+    // Asegurar que el contenedor PiP respete exactamente el aspecto nativo de la cámara (sin recorte)
+    const pipContainer = document.querySelector('.pip-webcam-container') as HTMLElement | null;
+    if (pipContainer && videoWidth > 0 && videoHeight > 0) {
+      pipContainer.style.aspectRatio = `${videoWidth} / ${videoHeight}`;
+    }
+
     // ── 1. Detección de Rostro & Plano al Pecho ─────────────────────────────
     if (faceDetector) {
       const faceResult = faceDetector.detectForVideo(videoEl, startTime);
       if (faceResult.detections && faceResult.detections.length > 0) {
         const box = faceResult.detections[0].boundingBox;
         if (box) {
-          chestPlaneManager.updateFromFaceBox(box, { width: videoWidth, height: videoHeight });
+          const screenAR = window.innerWidth / window.innerHeight;
+          chestPlaneManager.updateFromFaceBox(
+            box,
+            { width: videoWidth, height: videoHeight },
+            screenAR,
+            config.activeZone.ratioX
+          );
           planeStatusBadge.innerText = 'ROSTRO FIJADO (MENTÓN)';
           planeStatusBadge.style.color = 'var(--neon-green)';
         }
@@ -324,10 +338,7 @@ function processLoop(): void {
       }
     }
 
-    // Dibujar el plano del pecho y el rostro sobre el PiP
-    drawPiPOverlay(videoWidth, videoHeight);
-
-    // ── 2. Detección de Manos ───────────────────────────────────────────────
+    // ── 2. Detección de Manos & Telemetría ───────────────────────────────────
     const handResult = handLandmarker.detectForVideo(videoEl, startTime);
     const latency = performance.now() - startTime;
     latencyCounter.innerText = `${Math.round(latency)} ms`;
@@ -341,6 +352,9 @@ function processLoop(): void {
       lastFpsTime = startTime;
     }
 
+    let currentSmoothedLandmarks: Vec3[] | undefined = undefined;
+    let boundaryProx: BoundaryProximity | undefined = undefined;
+
     if (handResult.landmarks && handResult.landmarks.length > 0) {
       const rawLandmarks: Vec3[] = handResult.landmarks[0].map((lm) => ({
         x: lm.x,
@@ -350,6 +364,10 @@ function processLoop(): void {
 
       // A. Filtro One Euro
       const smoothed = filterSet.filterLandmarks(rawLandmarks, startTime);
+      currentSmoothedLandmarks = smoothed;
+
+      // Verificación de proximidad al límite del sensor de cámara (safe-zone alert)
+      boundaryProx = chestPlaneManager.checkBoundaryProximity(rawLandmarks[8].x, rawLandmarks[8].y);
 
       // B. Escala normalizadora
       const handScale = computeHandScale(smoothed);
@@ -395,40 +413,227 @@ function processLoop(): void {
       }
       clearOverlay();
     }
+
+    // Dibujar PiP con plano del pecho, safe zones y feedback de la mano
+    drawPiPOverlay(videoWidth, videoHeight, currentSmoothedLandmarks, boundaryProx);
+    // Zonas de seguridad estilo broadcast en el overlay SVG principal
+    drawSafeZones(boundaryProx);
   }
 
   requestAnimationFrame(processLoop);
 }
 
+// ─── ZONAS DE SEGURIDAD ESTILO BROADCAST (SAFE ZONE OVERLAY) ─────────────────
+
+/**
+ * Renderiza en el SVG principal (fixed, full-viewport) las zonas de seguridad estilo broadcast:
+ *  • ACTION SAFE (93%): Brackets en las esquinas indicando la zona óptima de movimiento.
+ *  • TITLE SAFE (90%): Borde punteado interior.
+ *  • LÍNEA DE MENTÓN (PIN): Borde superior cyan fidedigno (0% de pantalla).
+ *  • LÍNEA DE BORDE INFERIOR: Límite inferior del espacio interactivo (100% de pantalla).
+ *  • ALERTA DE PROXIMIDAD: Indicador visual si la mano se acerca al límite de percepción.
+ */
+function drawSafeZones(boundaryProx?: BoundaryProximity): void {
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  const plane = chestPlaneManager.getPlane();
+  const screenAR = plane.screenAspectRatio || (W / H);
+
+  // Márgenes estándar de producción de video (Action Safe 93%, Title Safe 90%)
+  const actionMarginX = W * 0.035;
+  const actionMarginY = H * 0.035;
+  const titleMarginX = W * 0.05;
+  const titleMarginY = H * 0.05;
+
+  let svg = '';
+
+  // 1. Safe Action Box (93%) con brackets en esquinas
+  const aX1 = actionMarginX;
+  const aY1 = actionMarginY;
+  const aX2 = W - actionMarginX;
+  const aY2 = H - actionMarginY;
+  const bracketLen = 22;
+
+  svg += `<path d="
+    M ${aX1} ${aY1 + bracketLen} L ${aX1} ${aY1} L ${aX1 + bracketLen} ${aY1}
+    M ${aX2 - bracketLen} ${aY1} L ${aX2} ${aY1} L ${aX2} ${aY1 + bracketLen}
+    M ${aX1} ${aY2 - bracketLen} L ${aX1} ${aY2} L ${aX1 + bracketLen} ${aY2}
+    M ${aX2 - bracketLen} ${aY2} L ${aX2} ${aY2} L ${aX2} ${aY2 - bracketLen}
+  " stroke="rgba(0, 255, 204, 0.45)" stroke-width="1.5" fill="none" />`;
+
+  // 2. Safe Title Box (90%)
+  const tX1 = titleMarginX;
+  const tY1 = titleMarginY;
+  const tX2 = W - titleMarginX;
+  const tY2 = H - titleMarginY;
+
+  svg += `<rect x="${tX1.toFixed(1)}" y="${tY1.toFixed(1)}" width="${(tX2 - tX1).toFixed(1)}" height="${(tY2 - tY1).toFixed(1)}"
+    fill="none" stroke="rgba(56, 189, 248, 0.18)" stroke-width="1" stroke-dasharray="6 6" />`;
+
+  // 3. Cruz Central de Calibración
+  const cx = W / 2;
+  const cy = H / 2;
+  const crossSize = 12;
+  svg += `<line x1="${cx - crossSize}" y1="${cy}" x2="${cx + crossSize}" y2="${cy}" stroke="rgba(0, 255, 204, 0.25)" stroke-width="1" />`;
+  svg += `<line x1="${cx}" y1="${cy - crossSize}" x2="${cx}" y2="${cy + crossSize}" stroke="rgba(0, 255, 204, 0.25)" stroke-width="1" />`;
+
+  // 4. Guía Superior: Anclaje de Mentón (Chin Pin) — posición sutil bajo el header
+  svg += `<line x1="0" y1="52" x2="${W}" y2="52" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="8 6" opacity="0.35" />`;
+  svg += `<text x="12" y="47" fill="#38bdf8" font-size="9" font-family="JetBrains Mono, monospace" opacity="0.55" letter-spacing="1">▼ 0% TOP — LÍNEA MENTÓN</text>`;
+
+  // 5. Guía Inferior: Borde Activo de Pantalla
+  svg += `<line x1="0" y1="${H - 2}" x2="${W}" y2="${H - 2}" stroke="rgba(0, 255, 204, 0.5)" stroke-width="2" stroke-dasharray="10 5" />`;
+  svg += `<text x="${(W * 0.5).toFixed(0)}" y="${H - 8}" text-anchor="middle" fill="rgba(0, 255, 204, 0.65)" font-size="10" font-family="JetBrains Mono, monospace" letter-spacing="1.5">▲ 100% BOTTOM — LÍMITE INTERACTIVO PECHO (${screenAR.toFixed(2)}:1)</text>`;
+
+  safeZoneGroup.innerHTML = svg;
+}
+
 // ─── DIBUJO DEL PLANO DEL PECHO EN EL PIP OVERLAY ───────────────────────────
 
-function drawPiPOverlay(w: number, h: number): void {
+/**
+ * Renderiza sobre el video de la cámara en el PiP:
+ *  1. Zonas de seguridad de captura óptica (Action Safe 90% del sensor).
+ *  2. Zona muerta superior (rostro / por encima del mentón).
+ *  3. Monitor virtual fidedigno (16:9) anclado al mentón con proporción real de pantalla.
+ *  4. Margen seguro inferior (espacio restante hasta el corte de cámara).
+ *  5. Representación en tiempo real de la mano y yema del índice para afordance instantáneo.
+ */
+function drawPiPOverlay(
+  w: number,
+  h: number,
+  handLandmarks?: Vec3[],
+  boundaryProx?: BoundaryProximity
+): void {
   pipCtx.clearRect(0, 0, w, h);
   const plane = chestPlaneManager.getPlane();
 
-  const px = plane.minX * w;
-  const py = plane.minY * h;
-  const pw = (plane.maxX - plane.minX) * w;
-  const ph = (plane.maxY - plane.minY) * h;
+  // 1. Sensor Perception Boundary (Action Safe 90% del sensor de cámara)
+  const camSafeX = w * 0.05;
+  const camSafeY = h * 0.05;
+  const camSafeW = w * 0.90;
+  const camSafeH = h * 0.90;
+  pipCtx.setLineDash([3, 4]);
+  pipCtx.strokeStyle = 'rgba(245, 158, 11, 0.35)';
+  pipCtx.lineWidth = 1;
+  pipCtx.strokeRect(camSafeX, camSafeY, camSafeW, camSafeH);
 
-  // Rectángulo del plano del pecho (anclado al mentón)
-  pipCtx.strokeStyle = plane.isFaceTracked ? '#00ffcc' : '#f59e0b';
-  pipCtx.lineWidth = 2;
-  pipCtx.setLineDash([6, 3]);
-  pipCtx.strokeRect(px, py, pw, ph);
+  // 2. Zona Muerta Superior: Por encima del mentón (Rostro)
+  const chinY = plane.minY * h;
+  if (chinY > 0) {
+    pipCtx.fillStyle = 'rgba(239, 68, 68, 0.12)';
+    pipCtx.fillRect(0, 0, w, chinY);
 
-  // Relleno sutil
-  pipCtx.fillStyle = plane.isFaceTracked ? 'rgba(0, 255, 204, 0.12)' : 'rgba(245, 158, 11, 0.08)';
-  pipCtx.fillRect(px, py, pw, ph);
+    pipCtx.font = '9px monospace';
+    pipCtx.fillStyle = 'rgba(239, 68, 68, 0.7)';
+    pipCtx.fillText('▲ ZONA MUERTA (ROSTRO)', 8, Math.max(14, chinY - 4));
+  }
 
-  // Línea superior anclada al mentón
+  // 3. Línea del Mentón (Chin-Pin)
   pipCtx.setLineDash([]);
   pipCtx.strokeStyle = '#38bdf8';
-  pipCtx.lineWidth = 3;
+  pipCtx.lineWidth = 2.5;
   pipCtx.beginPath();
-  pipCtx.moveTo(px, py);
-  pipCtx.lineTo(px + pw, py);
+  pipCtx.moveTo(0, chinY);
+  pipCtx.lineTo(w, chinY);
   pipCtx.stroke();
+
+  // 4. Límites laterales y rectángulo activo fidedigno
+  const planeX = plane.minX * w;
+  const planeW = (plane.maxX - plane.minX) * w;
+  const planeMaxY = plane.maxY * h;
+  const planeH = Math.max(20, planeMaxY - chinY);
+
+  // Margen inferior de la cámara (debajo del plano interactivo)
+  if (planeMaxY < h) {
+    pipCtx.fillStyle = 'rgba(59, 130, 246, 0.06)';
+    pipCtx.fillRect(0, planeMaxY, w, h - planeMaxY);
+    pipCtx.font = '8px monospace';
+    pipCtx.fillStyle = 'rgba(59, 130, 246, 0.5)';
+    pipCtx.fillText('▼ MARGEN SEGURO CÁMARA', 8, h - 4);
+  }
+
+  // 5. Rectángulo Interactivo Principal (Monitor Virtual Fidedigno con AR de Pantalla)
+  pipCtx.setLineDash([]);
+  pipCtx.strokeStyle = plane.isFaceTracked ? '#00ffcc' : '#f59e0b';
+  pipCtx.lineWidth = 2;
+  pipCtx.strokeRect(planeX, chinY, planeW, planeH);
+
+  pipCtx.fillStyle = plane.isFaceTracked
+    ? 'rgba(0, 255, 204, 0.08)'
+    : 'rgba(245, 158, 11, 0.06)';
+  pipCtx.fillRect(planeX, chinY, planeW, planeH);
+
+  // Inner Action Safe dentro del monitor virtual
+  const innerMargin = 6;
+  if (planeW > innerMargin * 2 && planeH > innerMargin * 2) {
+    pipCtx.setLineDash([4, 3]);
+    pipCtx.strokeStyle = 'rgba(0, 255, 204, 0.35)';
+    pipCtx.lineWidth = 1;
+    pipCtx.strokeRect(planeX + innerMargin, chinY + innerMargin, planeW - innerMargin * 2, planeH - innerMargin * 2);
+  }
+
+  // Cruz central del monitor virtual
+  const midX = planeX + planeW / 2;
+  const midY = chinY + planeH / 2;
+  pipCtx.setLineDash([]);
+  pipCtx.strokeStyle = 'rgba(0, 255, 204, 0.4)';
+  pipCtx.beginPath();
+  pipCtx.moveTo(midX - 6, midY);
+  pipCtx.lineTo(midX + 6, midY);
+  pipCtx.moveTo(midX, midY - 6);
+  pipCtx.lineTo(midX, midY + 6);
+  pipCtx.stroke();
+
+  // Etiqueta AR
+  pipCtx.font = '9px monospace';
+  pipCtx.fillStyle = '#00ffcc';
+  pipCtx.fillText(`PANTALLA ${plane.screenAspectRatio.toFixed(2)}:1`, planeX + 4, chinY + 12);
+
+  // 6. Feedback en Vivo de la Mano en el PiP (Afordance Visual Directo)
+  if (handLandmarks && handLandmarks.length > 8) {
+    const wrist = handLandmarks[0];
+    const indexTip = handLandmarks[8];
+
+    const wx = wrist.x * w;
+    const wy = wrist.y * h;
+    const ix = indexTip.x * w;
+    const iy = indexTip.y * h;
+
+    // Conector muñeca-índice
+    pipCtx.strokeStyle = 'rgba(0, 255, 204, 0.3)';
+    pipCtx.lineWidth = 1.5;
+    pipCtx.beginPath();
+    pipCtx.moveTo(wx, wy);
+    pipCtx.lineTo(ix, iy);
+    pipCtx.stroke();
+
+    // Punto muñeca
+    pipCtx.fillStyle = '#94a3b8';
+    pipCtx.beginPath();
+    pipCtx.arc(wx, wy, 2.5, 0, Math.PI * 2);
+    pipCtx.fill();
+
+    // Punto yema del índice
+    const isInsideActive = ix >= planeX && ix <= (planeX + planeW) && iy >= chinY && iy <= planeMaxY;
+    pipCtx.fillStyle = isInsideActive ? '#00ffcc' : (boundaryProx?.anyNear ? '#ef4444' : '#f59e0b');
+    pipCtx.beginPath();
+    pipCtx.arc(ix, iy, 4, 0, Math.PI * 2);
+    pipCtx.fill();
+
+    // Anillo de pulso
+    pipCtx.strokeStyle = isInsideActive ? 'rgba(0, 255, 204, 0.5)' : 'rgba(239, 68, 68, 0.6)';
+    pipCtx.lineWidth = 1;
+    pipCtx.beginPath();
+    pipCtx.arc(ix, iy, 7, 0, Math.PI * 2);
+    pipCtx.stroke();
+  }
+
+  // 7. Borde de Alerta en PiP si está cerca de perder percepción
+  if (boundaryProx?.anyNear) {
+    pipCtx.strokeStyle = 'rgba(239, 68, 68, 0.7)';
+    pipCtx.lineWidth = 2;
+    pipCtx.strokeRect(1, 1, w - 2, h - 2);
+  }
 }
 
 // ─── MANIPULACIÓN DE EVENTOS DE GESTOS EN LA WEB ─────────────────────────────
@@ -582,11 +787,21 @@ function renderAffordanceOverlay(pts: { x: number; y: number }[], fsmState: stri
     return;
   }
 
-  // 1. Puntero del índice (L1, L2, L3)
+  // 1. Puntero del índice (L1, L2, L3) — anclaje exacto en la yema del índice
   const tip = pts[8];
   virtualCursor.setAttribute('cx', `${tip.x}`);
   virtualCursor.setAttribute('cy', `${tip.y}`);
   virtualCursor.style.display = 'block';
+
+  // Escalar los puntos visuales de la mano alrededor de la yema del índice según virtualHandScale
+  const s = virtualHandScale;
+  const drawPts = pts.map((p, i) => {
+    if (i === 8) return tip;
+    return {
+      x: tip.x + (p.x - tip.x) * s,
+      y: tip.y + (p.y - tip.y) * s
+    };
+  });
 
   // Estados visuales del puntero
   if (fsmState === 'PUSH_ARMED') {
@@ -599,7 +814,7 @@ function renderAffordanceOverlay(pts: { x: number; y: number }[], fsmState: stri
 
   // Línea conectora entre pulgar e índice en Pinch (DRAG)
   if (fsmState === 'DRAG') {
-    const thumbTip = pts[4];
+    const thumbTip = drawPts[4];
     pinchConnector.setAttribute('x1', `${thumbTip.x}`);
     pinchConnector.setAttribute('y1', `${thumbTip.y}`);
     pinchConnector.setAttribute('x2', `${tip.x}`);
@@ -615,13 +830,13 @@ function renderAffordanceOverlay(pts: { x: number; y: number }[], fsmState: stri
     let skelSvg = '';
     for (const chain of FINGER_CHAINS) {
       for (let i = 0; i < chain.length - 1; i++) {
-        const p1 = pts[chain[i]];
-        const p2 = pts[chain[i + 1]];
-        skelSvg += `<line x1="${p1.x.toFixed(1)}" y1="${p1.y.toFixed(1)}" x2="${p2.x.toFixed(1)}" y2="${p2.y.toFixed(1)}" stroke="rgba(0, 255, 204, 0.4)" stroke-width="2"/>`;
+        const p1 = drawPts[chain[i]];
+        const p2 = drawPts[chain[i + 1]];
+        skelSvg += `<line x1="${p1.x.toFixed(1)}" y1="${p1.y.toFixed(1)}" x2="${p2.x.toFixed(1)}" y2="${p2.y.toFixed(1)}" stroke="rgba(0, 255, 204, 0.45)" stroke-width="${Math.max(1, 2 * s).toFixed(1)}"/>`;
       }
     }
-    for (const p of pts) {
-      skelSvg += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" fill="#fff" opacity="0.8"/>`;
+    for (const p of drawPts) {
+      skelSvg += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${Math.max(1.5, 3 * s).toFixed(1)}" fill="#fff" opacity="0.8"/>`;
     }
     skeletonGroup.innerHTML = skelSvg;
     return;
@@ -632,25 +847,25 @@ function renderAffordanceOverlay(pts: { x: number; y: number }[], fsmState: stri
     skeletonGroup.innerHTML = '';
     let volSvg = '';
 
-    // Cápsulas de falanges
+    // Cápsulas de falanges estilizadas
     FINGER_CHAINS.forEach((chain, fingerIdx) => {
       const radii = CAPSULE_RADII[fingerIdx];
       for (let i = 0; i < chain.length - 1; i++) {
-        const p1 = pts[chain[i]];
-        const p2 = pts[chain[i + 1]];
-        const r = radii[i] || 4;
-        volSvg += `<line x1="${p1.x.toFixed(1)}" y1="${p1.y.toFixed(1)}" x2="${p2.x.toFixed(1)}" y2="${p2.y.toFixed(1)}" stroke="#00ffcc" stroke-width="${r * 2}" stroke-linecap="round" stroke-opacity="0.35"/>`;
+        const p1 = drawPts[chain[i]];
+        const p2 = drawPts[chain[i + 1]];
+        const r = Math.max(1.5, (radii[i] || 4) * Math.sqrt(s) * 0.95);
+        volSvg += `<line x1="${p1.x.toFixed(1)}" y1="${p1.y.toFixed(1)}" x2="${p2.x.toFixed(1)}" y2="${p2.y.toFixed(1)}" stroke="#00ffcc" stroke-width="${(r * 2).toFixed(1)}" stroke-linecap="round" stroke-opacity="0.38"/>`;
       }
     });
 
     // Palma rellena
-    const palmKnuckles = [0, 5, 9, 13, 17].map((idx) => pts[idx]);
+    const palmKnuckles = [0, 5, 9, 13, 17].map((idx) => drawPts[idx]);
     const d = palmKnuckles.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ') + ' Z';
     volSvg += `<path d="${d}" fill="#00ffcc" fill-opacity="0.18"/>`;
 
     // Articulaciones brillantes
-    for (const p of pts) {
-      volSvg += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.5" fill="#ffffff" opacity="0.7"/>`;
+    for (const p of drawPts) {
+      volSvg += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${Math.max(1.2, 2.5 * s).toFixed(1)}" fill="#ffffff" opacity="0.75"/>`;
     }
 
     volumeGroup.innerHTML = volSvg;
@@ -701,6 +916,10 @@ function bindSlider(
   });
 }
 
+bindSlider('slider-handScale', 'val-handScale', '%', (v) => {
+  virtualHandScale = v;
+});
+
 bindSlider('slider-minCutoff', 'val-minCutoff', '', (v) => {
   config.oneEuro.minCutoff = v;
   filterSet.updateParams(v, config.oneEuro.beta);
@@ -714,6 +933,7 @@ bindSlider('slider-beta', 'val-beta', '', (v) => {
 bindSlider('slider-activeZone', 'val-activeZone', '%', (v) => {
   config.activeZone.ratioX = v;
   config.activeZone.ratioY = v;
+  chestPlaneManager.setAmplitudeRatio(v);
 });
 
 bindSlider('slider-scaleRate', 'val-scaleRate', '', (v) => {
