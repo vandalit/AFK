@@ -37,7 +37,8 @@ export type AffordanceLevel = 'L0' | 'L1' | 'L2' | 'L3';
 /** Payload transmitido desde Main hacia el Overlay en cada frame */
 export interface OverlayFramePayload {
   frame: HandFrame | null;
-  currentGesture: GestureEvent['type'] | 'idle';
+  /** Estado/evento actual de la FSM para feedback visual reactivo */
+  currentGesture: GestureEvent['type'] | 'idle' | 'PUSH_ARMED' | 'CLUTCH';
   affordanceLevel: AffordanceLevel;
   screenPointer?: { x: number; y: number };
 }

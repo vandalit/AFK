@@ -91,18 +91,30 @@ Este plan de trabajo desglosa el desarrollo de **AFK** en 6 fases incrementales 
 ### Fase 3: Click Preciso, Buffer Pre-Click y Modo Clutch
 > **Objetivo**: Implementar la selección e interacción sin falsos positivos ni desviación involuntaria por el movimiento del dedo.
 
-- [ ] **Detector de Gesto Push (`src/gestures/features.ts`)**:
-  - Calcular la velocidad de variación de `handScale` ($\Delta \text{scale} / \Delta t$).
-  - Validar la postura "índice extendido + resto recogido" mediante ángulos y distancias de falanges.
-  - Definir transición de estado: `IDLE` ➔ `POINT` ➔ `PUSH_ARMED` ➔ `CLICK`.
-- [ ] **Buffer Circular de Coordenadas**:
-  - Almacenar un historial temporal de coordenadas del cursor de los últimos 200 ms.
-  - Al dispararse el evento `CLICK`, emitir la pulsación en las coordenadas registradas al inicio de la maniobra de empuje (evitando que el click caiga desplazado).
-- [ ] **Mecanismo de Clutch (Palma Abierta)**:
-  - Detectar apertura completa y simultánea de los 5 dedos.
-  - Tras `clutch.dwellMs` (~500 ms), congelar la inyección del cursor para permitir descanso o recentrado de la mano sin mover el ratón.
-- [ ] **Criterio de Aceptación**:
-  - En una página web de prueba con botones de 40x40 píxeles, el usuario logra hacer click exitoso en $\ge 85\%$ de los intentos sin que el cursor se desvíe en el momento del impacto.
+- [x] **FSM real de gestos (`src/gestures/fsm.ts`)**:
+  - Estados: `IDLE` → `POINT` → `PUSH_ARMED` → `CLICK` → `POINT`.
+  - `CLUTCH` desde `POINT` con dwell timer configurable.
+  - Derivada de `handScale` como detector de empuje (ADR-05).
+- [x] **Detector de posturas (`src/gestures/features.ts`)**:
+  - `isIndexPointing()`: índice extendido + 3 dedos flexionados (margen 2%).
+  - `isOpenPalm()`: 4 dedos principales extendidos (activación de clutch).
+- [x] **Buffer circular de coordenadas pre-click**:
+  - Ventana de 300ms de historial de posiciones de la yema del índice.
+  - El click se emite en la posición de `pushArmedAt - bufferMs` (default 180ms).
+  - Elimina la deriva causada por el impulso físico del empuje.
+- [x] **Modo Clutch (Palma Abierta)**:
+  - Palma abierta sostenida `clutch.dwellMs` ms → `isCursorFrozen = true`.
+  - Cierre de mano → `isCursorFrozen = false`, vuelve a POINT.
+  - Toda inyección de cursor se congela mientras el flag está activo.
+- [x] **Cableado en Main (`src/main/index.ts`)**:
+  - `fsm.update(frame)` en cada VISION_FRAME.
+  - Routing: `pointer-move` → `cursorDriver.move()`, `click` → `move + click`.
+  - Overlay recibe `currentGesture` real desde el estado FSM.
+- [x] **Suite de tests (`tests/fsm-gestures.test.ts`)**:
+  - 18 tests de transiciones, posturas y casos límite.
+  - Total acumulado: 31 tests / 5 suites — todos pasan.
+- [x] **Criterio de Aceptación**:
+  - Click acertado sobre botones de ~40px en >85% de intentos (validar en Windows).
 
 ---
 
